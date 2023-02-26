@@ -23,8 +23,6 @@ public class Actuators {
         Channel channel = connection.createChannel();
         channel.exchangeDeclare(EXCHANGE_NAME, "topic");
 
-        // publish on a *.update queue
-        // subscribe on a *.data queue
         String consumerQueueName = channel.queueDeclare().getQueue();
         channel.queueBind(consumerQueueName, EXCHANGE_NAME, CONSUMER_ROUTING_KEY);
 

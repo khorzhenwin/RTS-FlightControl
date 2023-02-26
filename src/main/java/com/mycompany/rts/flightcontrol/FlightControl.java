@@ -9,7 +9,6 @@ import com.rabbitmq.client.DefaultConsumer;
 import com.rabbitmq.client.Envelope;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -46,15 +45,30 @@ public class FlightControl {
                     if (!command.equals("")) {
                         channel.basicPublish(EXCHANGE_NAME, ACTUATOR_PUBLISHER_ROUTING_KEY, null,
                                 command.getBytes("UTF-8"));
+                    } else {
+                        System.out.println("No balancing required. Within normal range.");
                     }
                     System.out.println();
                 } else if (routingKey.equals("actuator.data")) {
                     System.out.println("Received actuator data: " + message);
+                    flightControlProcessor.withActuatorData(message);
+                    // engineSpeed " + increase + " by " + value
+                    String[] messageParts = message.split(" ");
+                    String correspondingSensor = flightControlProcessor
+                            .getCorresspondingSensorFromActuator(messageParts[0].trim());
+                    String newSensorValue = flightControlProcessor.getSensorValue(correspondingSensor);
+                    String sensorNewValueFeedback = correspondingSensor + " sensor new reading : " + newSensorValue;
+                    channel.basicPublish(EXCHANGE_NAME,
+                            SENSOR_PUBLISHER_ROUTING_KEY, null,
+                            sensorNewValueFeedback.getBytes("UTF-8"));
                 }
             }
         };
 
         channel.basicConsume(consumerQueueName, true, consumer);
+
+        ScheduledExecutorService executor = Executors.newScheduledThreadPool(1);
+        executor.scheduleAtFixedRate(flightControlProcessor.new FlightControlMonitor(), 0, 12, TimeUnit.SECONDS);
     }
 }
 
@@ -70,25 +84,8 @@ class FlightControlProcessor {
     public volatile int engineSpeed = 50; // percentage of max speed 1-100
     public volatile int tailFlapsAngle = 0; // degrees -90 to 90
     public volatile int wingFlapsAngle = 0; // degrees -90 to 90
-    public volatile boolean isVentsOpen = true;
     public volatile boolean isLandingGearDeployed = false;
     public volatile boolean isOxygenMaskDeployed = false;
-
-    public void printPlaneState() {
-        System.out.println("--------SENSOR VALUES--------");
-        System.out.println("Altitude: " + altitude);
-        System.out.println("Cabin Pressure: " + cabinPressure);
-        System.out.println("Speed: " + speed);
-        System.out.println("Rainfall Magnitude: " + rainfallMagnitude);
-        System.out.println("--------ACTUATOR VALUES--------");
-        System.out.println("Engine Speed: " + engineSpeed);
-        System.out.println("Tail Flaps Angle: " + tailFlapsAngle);
-        System.out.println("Wing Flaps Angle: " + wingFlapsAngle);
-        System.out.println("Landing Gear Deployed: " + isLandingGearDeployed);
-        System.out.println("Oxygen Mask Deployed: " + isOxygenMaskDeployed);
-        System.out.println("----------------------------");
-        System.out.println();
-    }
 
     public synchronized void setIntValues(String sensorOrActuatorType, int value) {
         switch (sensorOrActuatorType) {
@@ -144,6 +141,50 @@ class FlightControlProcessor {
         System.out.println(sensorType + " reading has been " + changeType + " by " + changeValue);
     }
 
+    public synchronized void withActuatorData(String message) {
+        // engineSpeed " + increase + " by " + value
+        String[] messageParts = message.split(" ");
+        String actuatorType = messageParts[0].trim();
+        String changeType = messageParts[1].trim();
+        int changeValue = (changeType.equals("increase")) ? Integer.parseInt(messageParts[3])
+                : -Integer.parseInt(messageParts[3]);
+        if (actuatorType.equals("vents")) {
+            changeValue = (changeType.equals("open")) ? 10 : -10;
+        }
+
+        switch (actuatorType) {
+            case "engineSpeed":
+                setIntValues("engineSpeed", changeValue);
+                // for every 10% increase in engineSpeed, change speed by 100 km/h
+                System.out.println("speed value before change: " + speed + " km/h");
+                setIntValues("speed", (changeValue / 10) * 100);
+                System.out.println("speed value after change: " + speed + " km/h");
+                break;
+            case "tailFlapsAngle":
+                setIntValues("tailFlapsAngle", changeValue);
+                // for every 5 degree change in tailFlapsAngle, change altitude by 500 feet
+                System.out.println("altitude value before change: " + altitude + " feet");
+                setIntValues("altitude", (changeValue / 5) * 500);
+                System.out.println("altitude value after change: " + altitude + " feet");
+                break;
+            case "wingFlapsAngle":
+                setIntValues("wingFlapsAngle", changeValue);
+                // for every 5 degree change in wingFlapsAngle, change altitude by 500 feet
+                System.out.println("altitude value before change: " + altitude + " feet");
+                setIntValues("altitude", (changeValue / 5) * 500);
+                System.out.println("altitude value after change: " + altitude + " feet");
+                break;
+            case "vents":
+                // change cabinPressure
+                System.out.println("cabinPressure value before change: " + cabinPressure + " %");
+                setIntValues("cabinPressure", changeValue);
+                System.out.println("cabinPressure value after change: " + cabinPressure + " %");
+                break;
+            default:
+                break;
+        }
+    }
+
     public String getActuatorCommand(String message) {
         String[] messageParts = message.split(" ");// format eg "altitude increased 1000"
         String sensorType = messageParts[0].trim();
@@ -153,10 +194,6 @@ class FlightControlProcessor {
         String commandChangeType = (changeType.equals("increased")) ? "decrease" : "increase";
         String finalCommand = "";
 
-        // altitude has a range to change by 3000
-        // cabinPressure has a range to change by 10
-        // speed has a range to change by 20
-        // rainfallMagnitude has a range to change by 10
         switch (sensorType) {
             case "altitude":
                 // for every 1000ft, lower engineSpeed by 5% & lower flaps by 5 degrees
@@ -168,10 +205,10 @@ class FlightControlProcessor {
             case "cabinPressure":
                 // when cabinPressure deviate from initial value of 50 by 20%, open/close vents
                 finalCommand = (cabinPressure > 70) ? "open [vents]" : (cabinPressure < 30) ? "close vents" : "";
-                System.out.println("Command sent to balance cabin pressure: " + finalCommand);
                 if (finalCommand.equals("")) {
                     return "";
                 }
+                System.out.println("Command sent to balance cabin pressure: " + finalCommand);
                 break;
             case "speed":
                 finalCommand = (speed > 400) ? "decrease [engineSpeed] by 10"
@@ -197,4 +234,52 @@ class FlightControlProcessor {
         return finalCommand;
     }
 
+    public String getSensorValue(String sensor) {
+        switch (sensor) {
+            case "altitude":
+                return String.valueOf(altitude);
+            case "cabinPressure":
+                return String.valueOf(cabinPressure);
+            case "speed":
+                return String.valueOf(speed);
+            case "rainfallMagnitude":
+                return String.valueOf(rainfallMagnitude);
+            default:
+                return "";
+        }
+    }
+
+    public String getCorresspondingSensorFromActuator(String actuator) {
+        switch (actuator) {
+            case "engineSpeed":
+                return "speed";
+            case "tailFlapsAngle":
+                return "altitude";
+            case "wingFlapsAngle":
+                return "altitude";
+            case "vents":
+                return "cabinPressure";
+            default:
+                return "";
+        }
+    }
+
+    class FlightControlMonitor implements Runnable {
+        @Override
+        public void run() {
+            System.out.println("--------SENSOR VALUES--------");
+            System.out.println("Altitude: " + altitude);
+            System.out.println("Cabin Pressure: " + cabinPressure);
+            System.out.println("Speed: " + speed);
+            System.out.println("Rainfall Magnitude: " + rainfallMagnitude);
+            System.out.println("--------ACTUATOR VALUES--------");
+            System.out.println("Engine Speed: " + engineSpeed);
+            System.out.println("Tail Flaps Angle: " + tailFlapsAngle);
+            System.out.println("Wing Flaps Angle: " + wingFlapsAngle);
+            System.out.println("Landing Gear Deployed: " + isLandingGearDeployed);
+            System.out.println("Oxygen Mask Deployed: " + isOxygenMaskDeployed);
+            System.out.println("----------------------------");
+            System.out.println();
+        }
+    }
 }
