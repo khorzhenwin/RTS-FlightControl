@@ -1,6 +1,7 @@
 package com.mycompany.rts.flightcontrol;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -20,9 +21,17 @@ public class Sensors {
     protected static final String CONSUMER_ROUTING_KEY = "sensor.update";
 
     public static void main(String[] args) throws IOException, TimeoutException {
-        MockSensorData mockSensorData = new MockSensorData(EXCHANGE_NAME, PUBLISHER_ROUTING_KEY, "topic");
-        ScheduledExecutorService executor = Executors.newScheduledThreadPool(1);
-        executor.scheduleAtFixedRate(mockSensorData, 10, 10, TimeUnit.SECONDS);
+        // "altitude", "cabinPressure", "speed", "rain"
+        MockSensorData mockSensorData = new MockSensorData();
+        String[] sensorTypes = { "altitude", "cabinPressure", "speed", "rain" };
+        ScheduledExecutorService executor = Executors.newScheduledThreadPool(4);
+        // new data every 4 seconds
+        for (String sensorType : sensorTypes) {
+            executor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator(sensorType), 0, 4, TimeUnit.SECONDS);
+        }
+        // publish every 5 seconds, initial delay 5 seconds
+        executor.scheduleAtFixedRate(mockSensorData.new SensorDataPublisher(EXCHANGE_NAME, PUBLISHER_ROUTING_KEY,
+                "topic"), 5, 5, TimeUnit.SECONDS);
 
         ConnectionFactory factory = new ConnectionFactory();
         Connection connection = factory.newConnection();
@@ -47,33 +56,9 @@ public class Sensors {
     }
 }
 
-class MockSensorData extends PublisherHelper implements Runnable {
-
-    public MockSensorData(String publisherExchange, String publisherKey, String exchangeType) {
-        super(publisherExchange, publisherKey, exchangeType);
-    }
-
-    @Override
-    public void run() {
-        try {
-            String sensorType = getRandomSensorType();
-            String changeType = getRandomChangeType();
-            int changeValue = getRandomChangeValue(sensorType);
-            System.out.println("Generated : " + sensorType + " " + changeType + " by " + changeValue + " "
-                    + getMeasurementUnit(sensorType));
-            publish(sensorType + " " + changeType + " " + changeValue); // format eg "altitude increased 1000"
-            System.out.println();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    public String[] sensorTypes = { "altitude", "cabinPressure", "speed", "rain" };
+class MockSensorData {
+    ArrayList<String> sensorDataList = new ArrayList<String>();
     public String[] changeTypes = { "increased", "decreased" };
-
-    public String getRandomSensorType() {
-        return sensorTypes[(int) (Math.random() * sensorTypes.length)];
-    }
 
     public String getRandomChangeType() {
         return changeTypes[(int) (Math.random() * changeTypes.length)];
@@ -117,4 +102,39 @@ class MockSensorData extends PublisherHelper implements Runnable {
         return changeValue;
     }
 
+    class SensorDataGenerator implements Runnable {
+        String sensorType;
+
+        public SensorDataGenerator(String sensorType) {
+            this.sensorType = sensorType;
+        }
+
+        @Override
+        public void run() {
+            String changeType = getRandomChangeType();
+            int changeValue = getRandomChangeValue(sensorType);
+            System.out.println("Generated : " + sensorType + " " + changeType + " by " + changeValue + " "
+                    + getMeasurementUnit(sensorType));
+            // format eg "altitude increased 1000"
+            sensorDataList.add(sensorType + " " + changeType + " " + changeValue);
+        }
+    }
+
+    class SensorDataPublisher extends PublisherHelper implements Runnable {
+        public SensorDataPublisher(String publisherExchange, String publisherKey, String exchangeType) {
+            super(publisherExchange, publisherKey, exchangeType);
+        }
+
+        @Override
+        public void run() {
+            try {
+                for (int i = 0; i < sensorDataList.size(); i++) {
+                    publish(sensorDataList.get(i));
+                }
+                sensorDataList.clear();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
 }
