@@ -157,7 +157,7 @@ class FlightControlProcessor {
                 setIntValues("engineSpeed", changeValue);
                 // for every 10% increase in engineSpeed, change speed by 100 km/h
                 System.out.println("speed value before change: " + speed + " km/h");
-                setIntValues("speed", (changeValue / 10) * 100);
+                setIntValues("speed", (changeValue / 5) * 100);
                 System.out.println("speed value after change: " + speed + " km/h");
                 break;
             case "tailFlapsAngle":
