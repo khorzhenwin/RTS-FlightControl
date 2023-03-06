@@ -56,20 +56,11 @@ public class Actuators {
                 : -Integer.parseInt(tokens[3]);
 
         for (String sensor : sensors) {
-            switch (sensor) {
-                case "engineSpeed":
-                    acknowledgementMessages.add("engineSpeed " + tokens[0] + " by " + value);
-                    break;
-                case "tailFlapsAngle":
-                    acknowledgementMessages.add("tailFlapsAngle " + tokens[0] + " by " + value);
-                    break;
-                case "wingFlapsAngle":
-                    acknowledgementMessages.add("wingFlapsAngle " + tokens[0] + " by " + value);
-                    break;
-                case "vents":
-                    acknowledgementMessages.add("vents " + tokens[0] + " for 10 seconds");
-                    break;
+            if (sensor.equals("vents")) {
+                acknowledgementMessages.add(sensor + " " + tokens[0] + " for 10 seconds");
+                continue;
             }
+            acknowledgementMessages.add(sensor + " " + tokens[0] + " by " + value);
         }
 
         return acknowledgementMessages;
