@@ -38,37 +38,52 @@ public class FlightControl {
                     byte[] body) throws IOException {
                 String routingKey = envelope.getRoutingKey();
                 String message = new String(body, "UTF-8");
-                if (routingKey.equals("sensor.data")) {
-                    System.out.println("Received sensor data: " + message);
-                    flightControlProcessor.withSensorData(message);
-                    String command = flightControlProcessor.getActuatorCommand(message);
-                    if (!command.equals("")) {
-                        channel.basicPublish(EXCHANGE_NAME, ACTUATOR_PUBLISHER_ROUTING_KEY, null,
-                                command.getBytes("UTF-8"));
-                    } else {
-                        System.out.println("No balancing required. Within normal range.");
+                try {
+                    if (routingKey.equals("sensor.data")) {
+                        processAndSendToActuator(flightControlProcessor, channel, message);
+                    } else if (routingKey.equals("actuator.data")) {
+                        processAndSendToSensor(flightControlProcessor, channel, message);
                     }
-                    System.out.println();
-                } else if (routingKey.equals("actuator.data")) {
-                    System.out.println("Received actuator data: " + message);
-                    flightControlProcessor.withActuatorData(message);
-                    // engineSpeed " + increase + " by " + value
-                    String[] messageParts = message.split(" ");
-                    String correspondingSensor = flightControlProcessor
-                            .getCorresspondingSensorFromActuator(messageParts[0].trim());
-                    String newSensorValue = flightControlProcessor.getSensorValue(correspondingSensor);
-                    String sensorNewValueFeedback = correspondingSensor + " sensor new reading : " + newSensorValue;
-                    channel.basicPublish(EXCHANGE_NAME,
-                            SENSOR_PUBLISHER_ROUTING_KEY, null,
-                            sensorNewValueFeedback.getBytes("UTF-8"));
+                } catch (Exception e) {
+
                 }
+
             }
         };
 
         channel.basicConsume(consumerQueueName, true, consumer);
 
         ScheduledExecutorService executor = Executors.newScheduledThreadPool(1);
-        executor.scheduleAtFixedRate(flightControlProcessor.new FlightControlMonitor(), 0, 12, TimeUnit.SECONDS);
+        executor.scheduleAtFixedRate(flightControlProcessor.new FlightControlMonitor(), 0, 5, TimeUnit.SECONDS);
+    }
+
+    public static void processAndSendToActuator(FlightControlProcessor flightControlProcessor, Channel channel,
+            String message)
+            throws IOException, TimeoutException {
+        System.out.println("Received sensor data: " + message);
+        flightControlProcessor.withSensorData(message);
+        String command = flightControlProcessor.getActuatorCommand(message);
+        if (!command.equals("")) {
+            channel.basicPublish(EXCHANGE_NAME, ACTUATOR_PUBLISHER_ROUTING_KEY, null,
+                    command.getBytes("UTF-8"));
+        }
+        System.out.println();
+    }
+
+    public static void processAndSendToSensor(FlightControlProcessor flightControlProcessor, Channel channel,
+            String message)
+            throws IOException, TimeoutException {
+        System.out.println("Received actuator data: " + message);
+        flightControlProcessor.withActuatorData(message);
+        // engineSpeed " + increase + " by " + value
+        String[] messageParts = message.split(" ");
+        String correspondingSensor = flightControlProcessor
+                .getCorresspondingSensorFromActuator(messageParts[0].trim());
+        String newSensorValue = flightControlProcessor.getSensorValue(correspondingSensor);
+        String sensorNewValueFeedback = correspondingSensor + " sensor new reading : " + newSensorValue;
+        channel.basicPublish(EXCHANGE_NAME,
+                SENSOR_PUBLISHER_ROUTING_KEY, null,
+                sensorNewValueFeedback.getBytes("UTF-8"));
     }
 }
 
@@ -149,15 +164,15 @@ class FlightControlProcessor {
         int changeValue = (changeType.equals("increase")) ? Integer.parseInt(messageParts[3])
                 : -Integer.parseInt(messageParts[3]);
         if (actuatorType.equals("vents")) {
-            changeValue = (changeType.equals("open")) ? 10 : -10;
+            changeValue = (changeType.equals("open")) ? -10 : 10; // vents open = cabinPressure decrease
         }
 
         switch (actuatorType) {
             case "engineSpeed":
                 setIntValues("engineSpeed", changeValue);
-                // for every 10% increase in engineSpeed, change speed by 100 km/h
+                // for every 10% increase in engineSpeed, change speed by 10 km/h
                 System.out.println("speed value before change: " + speed + " km/h");
-                setIntValues("speed", (changeValue / 5) * 100);
+                setIntValues("speed", (changeValue / 5) * 10);
                 System.out.println("speed value after change: " + speed + " km/h");
                 break;
             case "tailFlapsAngle":
@@ -180,44 +195,47 @@ class FlightControlProcessor {
                 setIntValues("cabinPressure", changeValue);
                 System.out.println("cabinPressure value after change: " + cabinPressure + " %");
                 break;
+            case "oxygenMask":
+                isOxygenMaskDeployed = true;
+                System.out.println("--------- OXYGEN MASK SUCCESSFULLY DEPLOYED ---------");
+                System.out.println("Emergency repressuring cabin and closing vents");
+                setIntValues("cabinPressure", 50);
             default:
                 break;
         }
+        System.out.println();
     }
 
     public String getActuatorCommand(String message) {
         String[] messageParts = message.split(" ");// format eg "altitude increased 1000"
         String sensorType = messageParts[0].trim();
         String changeType = messageParts[1].trim();
-        int changeValue = (changeType.equals("increased")) ? Integer.parseInt(messageParts[2])
-                : -Integer.parseInt(messageParts[2]);
         String commandChangeType = (changeType.equals("increased")) ? "decrease" : "increase";
         String finalCommand = "";
 
         switch (sensorType) {
             case "altitude":
                 // for every 1000ft, lower engineSpeed by 5% & lower flaps by 5 degrees
-                int changeActuatorValue = (changeValue / 1000) * -5;
+                int changeActuatorValue = (Integer.parseInt(messageParts[2]) / 1000) * 5;
                 finalCommand = String.format("%s [engineSpeed,tailFlapsAngle,wingFlapsAngle] by %s", commandChangeType,
                         changeActuatorValue);
-                System.out.println("Command sent to balance altitude: " + finalCommand);
                 break;
             case "cabinPressure":
                 // when cabinPressure deviate from initial value of 50 by 20%, open/close vents
-                finalCommand = (cabinPressure > 70) ? "open [vents]" : (cabinPressure < 30) ? "close vents" : "";
-                if (finalCommand.equals("")) {
-                    return "";
+                if (cabinPressure > 70) {
+                    finalCommand = "open [vents]";
+                } else if (cabinPressure < 30 && cabinPressure > 10) {
+                    finalCommand = "close [vents]";
+                } else if (cabinPressure < 10) {
+                    System.out.println("--------- EMERGENCY DEPLOYING OXYGEN MASK ---------");
+                    System.out.println("--------- EMERGENCY LOWERING ALTITUDE ---------");
+                    finalCommand = "decrease [engineSpeed,tailFlapsAngle,wingFlapsAngle,oxygenMask] by 50";
                 }
-                System.out.println("Command sent to balance cabin pressure: " + finalCommand);
                 break;
             case "speed":
                 finalCommand = (speed > 400) ? "decrease [engineSpeed] by 10"
                         : (speed < 200) ? "increase [engineSpeed] by 10"
                                 : "";
-                if (finalCommand.equals("")) {
-                    return "";
-                }
-                System.out.println("Command sent to balance speed: " + finalCommand);
                 break;
             case "rain":
                 if (rainfallMagnitude < 10) {
@@ -226,10 +244,12 @@ class FlightControlProcessor {
                 // lower engineSpeed by 2% when rainfallMagnitude increases every 10%
                 int changeEngineSpeed = (rainfallMagnitude / 10) * -2;
                 finalCommand = String.format("%s [engineSpeed] by %s", commandChangeType, changeEngineSpeed);
-                System.out.println("Command sent due to increased rainfall: " + finalCommand);
                 break;
             default:
                 break;
+        }
+        if (!finalCommand.equals("")) {
+            System.out.println("Command sent for " + sensorType + ": " + finalCommand);
         }
         return finalCommand;
     }
@@ -262,6 +282,10 @@ class FlightControlProcessor {
             default:
                 return "";
         }
+    }
+
+    public boolean isLowPressure() {
+        return cabinPressure < 10;
     }
 
     class FlightControlMonitor implements Runnable {

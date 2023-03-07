@@ -27,7 +27,7 @@ public class Sensors {
         ScheduledExecutorService executor = Executors.newScheduledThreadPool(4);
         // new data every 4 seconds
         for (String sensorType : sensorTypes) {
-            executor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator(sensorType), 0, 4, TimeUnit.SECONDS);
+            executor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator(sensorType), 4, 4, TimeUnit.SECONDS);
         }
         // publish every 5 seconds, initial delay 5 seconds
         executor.scheduleAtFixedRate(mockSensorData.new SensorDataPublisher(EXCHANGE_NAME, PUBLISHER_ROUTING_KEY,
@@ -57,6 +57,7 @@ public class Sensors {
 }
 
 class MockSensorData {
+    public volatile boolean isSuddenLossOfPressure = false;
     ArrayList<String> sensorDataList = new ArrayList<String>();
     public String[] changeTypes = { "increased", "decreased" };
 
@@ -111,12 +112,19 @@ class MockSensorData {
 
         @Override
         public void run() {
-            String changeType = getRandomChangeType();
-            int changeValue = getRandomChangeValue(sensorType);
-            System.out.println("Generated : " + sensorType + " " + changeType + " by " + changeValue + " "
-                    + getMeasurementUnit(sensorType));
-            // format eg "altitude increased 1000"
-            sensorDataList.add(sensorType + " " + changeType + " " + changeValue);
+            // 1 in 5 chance of sudden loss of pressure and will only happen once
+            if (sensorType.equals("cabinPressure") && ((int) (Math.random() * 5) == 0) && !isSuddenLossOfPressure) {
+                System.out.println("Generated : " + sensorType + " " + "sudden loss of pressure");
+                sensorDataList.add(sensorType + " decreased 50");
+                isSuddenLossOfPressure = true;
+            } else {
+                String changeType = getRandomChangeType();
+                int changeValue = getRandomChangeValue(sensorType);
+                System.out.println("Generated : " + sensorType + " " + changeType + " by " + changeValue + " "
+                        + getMeasurementUnit(sensorType));
+                // format eg "altitude increased 1000"
+                sensorDataList.add(sensorType + " " + changeType + " " + changeValue);
+            }
         }
     }
 
@@ -128,6 +136,7 @@ class MockSensorData {
         @Override
         public void run() {
             try {
+                System.out.println("Publishing " + sensorDataList.size() + " sensor data");
                 for (int i = 0; i < sensorDataList.size(); i++) {
                     publish(sensorDataList.get(i));
                 }

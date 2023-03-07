@@ -51,16 +51,16 @@ public class Actuators {
         ArrayList<String> acknowledgementMessages = new ArrayList<String>();
         String[] tokens = message.split(" ");
         String[] sensors = tokens[1].trim().replaceAll("[\\[\\]]", "").split(",");
-        int value = (tokens[0].trim().equals("increase") || tokens[0].trim().equals("open"))
-                ? Integer.parseInt(tokens[3])
-                : -Integer.parseInt(tokens[3]);
 
         for (String sensor : sensors) {
             if (sensor.equals("vents")) {
                 acknowledgementMessages.add(sensor + " " + tokens[0] + " for 10 seconds");
                 continue;
+            } else if (sensor.equals("oxygenMask")) {
+                acknowledgementMessages.add("oxygenMask deployed x 1");
+                continue;
             }
-            acknowledgementMessages.add(sensor + " " + tokens[0] + " by " + value);
+            acknowledgementMessages.add(sensor + " " + tokens[0] + " by " + tokens[3]);
         }
 
         return acknowledgementMessages;
