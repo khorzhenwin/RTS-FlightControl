@@ -48,7 +48,6 @@ public class Sensors {
                 String message = new String(body, "UTF-8");
                 System.out.println("-----------------");
                 System.out.println("Received - " + message);
-                System.out.println("-----------------");
             }
         };
 
