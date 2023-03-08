@@ -16,27 +16,37 @@ import com.rabbitmq.client.DefaultConsumer;
 import com.rabbitmq.client.Envelope;
 
 public class Sensors {
+
     protected static final String EXCHANGE_NAME = "flight_control";
+    protected static final String EXCHANGE_TYPE = "topic";
     protected static final String PUBLISHER_ROUTING_KEY = "sensor.data";
     protected static final String CONSUMER_ROUTING_KEY = "sensor.update";
 
     public static void main(String[] args) throws IOException, TimeoutException {
+        // ------------------------------- PRODUCERS -------------------------------
         // "altitude", "cabinPressure", "speed", "rain"
         MockSensorData mockSensorData = new MockSensorData();
-        String[] sensorTypes = { "altitude", "cabinPressure", "speed", "rain" };
-        ScheduledExecutorService executor = Executors.newScheduledThreadPool(4);
+        String[] sensorTypes = { "altitude", "speed", "cabinPressure", "rain" };
+        ScheduledExecutorService mockDataExecutor = Executors.newScheduledThreadPool(4);
+        ScheduledExecutorService publisherExecutor = Executors.newScheduledThreadPool(1);
+        ScheduledExecutorService landingAltitudeDataExecutor = Executors.newScheduledThreadPool(1);
+        ScheduledExecutorService landingSpeedDataExecutor = Executors.newScheduledThreadPool(1);
+
         // new data every 4 seconds
         for (String sensorType : sensorTypes) {
-            executor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator(sensorType), 4, 4, TimeUnit.SECONDS);
+            mockDataExecutor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator(sensorType), 4, 4,
+                    TimeUnit.SECONDS);
         }
         // publish every 5 seconds, initial delay 5 seconds
-        executor.scheduleAtFixedRate(mockSensorData.new SensorDataPublisher(EXCHANGE_NAME, PUBLISHER_ROUTING_KEY,
-                "topic"), 5, 5, TimeUnit.SECONDS);
+        publisherExecutor
+                .scheduleAtFixedRate(mockSensorData.new SensorDataPublisher(EXCHANGE_NAME, PUBLISHER_ROUTING_KEY,
+                        EXCHANGE_TYPE), 5, 5, TimeUnit.SECONDS);
 
+        // ------------------------------- CONSUMERS -------------------------------
         ConnectionFactory factory = new ConnectionFactory();
         Connection connection = factory.newConnection();
         Channel channel = connection.createChannel();
-        channel.exchangeDeclare(EXCHANGE_NAME, "topic");
+        channel.exchangeDeclare(EXCHANGE_NAME, EXCHANGE_TYPE);
 
         String consumerQueueName = channel.queueDeclare().getQueue();
         channel.queueBind(consumerQueueName, EXCHANGE_NAME, CONSUMER_ROUTING_KEY);
@@ -48,6 +58,35 @@ public class Sensors {
                 String message = new String(body, "UTF-8");
                 System.out.println("-----------------");
                 System.out.println("Received - " + message);
+
+                if (message.contains("shutdownMode")) {
+                    try {
+                        mockDataExecutor.shutdownNow();
+                        landingSpeedDataExecutor.shutdownNow();
+                        landingAltitudeDataExecutor.shutdownNow();
+                        publisherExecutor.shutdownNow();
+                        channel.close();
+                        connection.close();
+                        System.out.println("Connection closed");
+                        System.exit(0);
+                    } catch (TimeoutException e) {
+                    }
+                } else if (message.contains("shutdown speed generator")) {
+                    landingSpeedDataExecutor.shutdownNow();
+                } else if (message.contains("landingMode") && !mockSensorData.isLandingMode) {
+                    mockDataExecutor.shutdownNow();
+                    System.out.println("-------------------- Landing mode activated --------------------");
+                    mockSensorData.isLandingMode = true;
+                    mockSensorData.changeTypes = new String[] { "decreased" };
+                    mockSensorData.sensorDataList.clear();
+                    mockSensorData.sensorDataList.add("landingMode acknowledged");
+                    landingAltitudeDataExecutor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator("altitude"),
+                            4, 4,
+                            TimeUnit.SECONDS);
+                    landingSpeedDataExecutor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator("speed"), 4, 4,
+                            TimeUnit.SECONDS);
+                }
+
             }
         };
 
@@ -56,9 +95,11 @@ public class Sensors {
 }
 
 class MockSensorData {
+
     public volatile boolean isSuddenLossOfPressure = false;
-    ArrayList<String> sensorDataList = new ArrayList<String>();
-    public String[] changeTypes = { "increased", "decreased" };
+    public volatile boolean isLandingMode = false;
+    public volatile ArrayList<String> sensorDataList = new ArrayList<String>();
+    public volatile String[] changeTypes = { "increased", "decreased" };
 
     public String getRandomChangeType() {
         return changeTypes[(int) (Math.random() * changeTypes.length)];
@@ -103,6 +144,7 @@ class MockSensorData {
     }
 
     class SensorDataGenerator implements Runnable {
+
         String sensorType;
 
         public SensorDataGenerator(String sensorType) {
@@ -128,6 +170,7 @@ class MockSensorData {
     }
 
     class SensorDataPublisher extends PublisherHelper implements Runnable {
+
         public SensorDataPublisher(String publisherExchange, String publisherKey, String exchangeType) {
             super(publisherExchange, publisherKey, exchangeType);
         }
@@ -145,4 +188,5 @@ class MockSensorData {
             }
         }
     }
+
 }
