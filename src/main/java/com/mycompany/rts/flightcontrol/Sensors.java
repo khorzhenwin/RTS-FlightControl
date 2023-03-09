@@ -54,13 +54,12 @@ public class Sensors {
             public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties,
                     byte[] body) throws IOException {
                 String message = new String(body, "UTF-8");
-                System.out.println("-----------------");
-                System.out.println("Received - " + message);
+                System.out.println("########### Received - " + message);
                 checkFlightModeAndProcess(message, mockSensorData);
 
                 if (message.contains("shutdown speed generator")) {
                     landingSpeedDataExecutor.shutdownNow();
-                } else if (message.contains("landingMode") && !mockSensorData.isLandingMode) {
+                } else if (message.contains("landingMode")) {
                     mockDataGeneratorExecutor.shutdownNow();
                     landingAltitudeDataExecutor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator("altitude"),
                             4, 4, TimeUnit.SECONDS);
@@ -74,9 +73,17 @@ public class Sensors {
     }
 
     public static void checkFlightModeAndProcess(String message, MockSensorData mockSensorData) {
-
-        if (message.contains("shutdownMode")) {
+        if (message.contains("sensor new reading")) {
+            mockSensorData.totalConsumed += 1;
+            if (mockSensorData.startTime != 0) {
+                mockSensorData.endTime = System.currentTimeMillis();
+                mockSensorData.addDuration(mockSensorData.getTimeDifference());
+                mockSensorData.startTime = 0;
+            }
+        } else if (message.contains("shutdownMode")) {
             System.out.println("Connection closed");
+            mockSensorData.printDurationMetrics();
+            mockSensorData.printThroughputMetrics();
             System.exit(0);
         } else if (message.contains("landingMode") && !mockSensorData.isLandingMode) {
             System.out.println("-------------------- Landing mode activated --------------------");
@@ -88,7 +95,7 @@ public class Sensors {
     }
 }
 
-class MockSensorData {
+class MockSensorData extends TestHelper {
 
     public volatile boolean isSuddenLossOfPressure = false;
     public volatile boolean isLandingMode = false;
@@ -173,8 +180,14 @@ class MockSensorData {
         public void run() {
             try {
                 System.out.println("Publishing " + sensorDataList.size() + " sensor data");
+                cycles += 1;
+                endTime = 0;
+                startTime = System.currentTimeMillis();
                 for (int i = 0; i < sensorDataList.size(); i++) {
                     publish(sensorDataList.get(i));
+                    if (!sensorDataList.get(i).contains("sensor new reading")) {
+                        totalPublished += 1;
+                    }
                 }
                 sensorDataList.clear();
             } catch (Exception e) {

@@ -120,21 +120,24 @@ public class FlightControl {
     public static void processAndSendToSensor(FlightControlProcessor flightControlProcessor, Channel channel,
             String message)
             throws IOException, TimeoutException {
-        if (flightControlProcessor.speed <= 10) {
+        if (flightControlProcessor.speed <= 10 && !flightControlProcessor.hasSentShutDownSpeedMessage) {
             channel.basicPublish(EXCHANGE_NAME, SENSOR_PUBLISHER_ROUTING_KEY, null,
                     "shutdown speed generator".getBytes("UTF-8"));
+            flightControlProcessor.hasSentShutDownSpeedMessage = true;
         }
         System.out.println("Received actuator data: " + message);
         flightControlProcessor.withActuatorData(message);
         // engineSpeed " + increase + " by " + value
         String[] messageParts = message.split(" ");
-        String correspondingSensor = flightControlProcessor
-                .getCorresspondingSensorFromActuator(messageParts[0].trim());
-        String newSensorValue = flightControlProcessor.getSensorValue(correspondingSensor);
-        String sensorNewValueFeedback = correspondingSensor + " sensor new reading : " + newSensorValue;
-        channel.basicPublish(EXCHANGE_NAME,
-                SENSOR_PUBLISHER_ROUTING_KEY, null,
-                sensorNewValueFeedback.getBytes("UTF-8"));
+        String actuator = messageParts[0].trim();
+        String correspondingSensor = flightControlProcessor.getCorresspondingSensorFromActuator(actuator);
+        if (!actuator.equals("")) {
+            String newSensorValue = flightControlProcessor.getSensorValue(correspondingSensor);
+            String sensorNewValueFeedback = correspondingSensor + " sensor new reading : " + newSensorValue;
+            channel.basicPublish(EXCHANGE_NAME,
+                    SENSOR_PUBLISHER_ROUTING_KEY, null,
+                    sensorNewValueFeedback.getBytes("UTF-8"));
+        }
     }
 }
 
@@ -142,6 +145,7 @@ class FlightControlProcessor implements FlightMode {
     public volatile boolean isLandingMode = false;
     public volatile boolean hasLanded = false;
     public volatile boolean hasSentLandingGearDeploymentMessage = false;
+    public volatile boolean hasSentShutDownSpeedMessage = false;
     // Sensor data
     public volatile int altitude = 30000; // normal range of 30000 feet
     public volatile int cabinPressure = 50; // percentage of max pressure 1-100
