@@ -32,12 +32,11 @@ public class FlightControl {
         executor.scheduleAtFixedRate(flightControlProcessor.new FlightControlMonitor(), 0, 5, TimeUnit.SECONDS);
         // publish landing signal after 30 seconds only one time
         executor.schedule(
-                new LandingSignalPublisher(EXCHANGE_NAME, SENSOR_PUBLISHER_ROUTING_KEY, EXCHANGE_TYPE, "sensor"), 30,
-                TimeUnit.SECONDS);
+                new LandingSignalPublisher(EXCHANGE_NAME, SENSOR_PUBLISHER_ROUTING_KEY, EXCHANGE_TYPE, "sensor"),
+                30, TimeUnit.SECONDS);
         executor.schedule(
                 new LandingSignalPublisher(EXCHANGE_NAME, ACTUATOR_PUBLISHER_ROUTING_KEY, EXCHANGE_TYPE, "actuator"),
-                30,
-                TimeUnit.SECONDS);
+                30, TimeUnit.SECONDS);
 
         // publish on a *.update queue
         // subscribe on a *.data queue

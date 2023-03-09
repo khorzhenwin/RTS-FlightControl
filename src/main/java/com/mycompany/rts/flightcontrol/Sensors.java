@@ -27,20 +27,18 @@ public class Sensors {
         // "altitude", "cabinPressure", "speed", "rain"
         MockSensorData mockSensorData = new MockSensorData();
         String[] sensorTypes = { "altitude", "speed", "cabinPressure", "rain" };
-        ScheduledExecutorService mockDataExecutor = Executors.newScheduledThreadPool(4);
+        ScheduledExecutorService mockDataGeneratorExecutor = Executors.newScheduledThreadPool(4);
         ScheduledExecutorService publisherExecutor = Executors.newScheduledThreadPool(1);
         ScheduledExecutorService landingAltitudeDataExecutor = Executors.newScheduledThreadPool(1);
         ScheduledExecutorService landingSpeedDataExecutor = Executors.newScheduledThreadPool(1);
 
-        // new data every 4 seconds
         for (String sensorType : sensorTypes) {
-            mockDataExecutor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator(sensorType), 4, 4,
-                    TimeUnit.SECONDS);
+            mockDataGeneratorExecutor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator(sensorType),
+                    4, 4, TimeUnit.SECONDS);
         }
-        // publish every 5 seconds, initial delay 5 seconds
-        publisherExecutor
-                .scheduleAtFixedRate(mockSensorData.new SensorDataPublisher(EXCHANGE_NAME, PUBLISHER_ROUTING_KEY,
-                        EXCHANGE_TYPE), 5, 5, TimeUnit.SECONDS);
+        publisherExecutor.scheduleAtFixedRate(
+                mockSensorData.new SensorDataPublisher(EXCHANGE_NAME, PUBLISHER_ROUTING_KEY, EXCHANGE_TYPE),
+                5, 5, TimeUnit.SECONDS);
 
         // ------------------------------- CONSUMERS -------------------------------
         ConnectionFactory factory = new ConnectionFactory();
@@ -58,39 +56,35 @@ public class Sensors {
                 String message = new String(body, "UTF-8");
                 System.out.println("-----------------");
                 System.out.println("Received - " + message);
+                checkFlightModeAndProcess(message, mockSensorData);
 
-                if (message.contains("shutdownMode")) {
-                    try {
-                        mockDataExecutor.shutdownNow();
-                        landingSpeedDataExecutor.shutdownNow();
-                        landingAltitudeDataExecutor.shutdownNow();
-                        publisherExecutor.shutdownNow();
-                        channel.close();
-                        connection.close();
-                        System.out.println("Connection closed");
-                        System.exit(0);
-                    } catch (TimeoutException e) {
-                    }
-                } else if (message.contains("shutdown speed generator")) {
+                if (message.contains("shutdown speed generator")) {
                     landingSpeedDataExecutor.shutdownNow();
                 } else if (message.contains("landingMode") && !mockSensorData.isLandingMode) {
-                    mockDataExecutor.shutdownNow();
-                    System.out.println("-------------------- Landing mode activated --------------------");
-                    mockSensorData.isLandingMode = true;
-                    mockSensorData.changeTypes = new String[] { "decreased" };
-                    mockSensorData.sensorDataList.clear();
-                    mockSensorData.sensorDataList.add("landingMode acknowledged");
+                    mockDataGeneratorExecutor.shutdownNow();
                     landingAltitudeDataExecutor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator("altitude"),
-                            4, 4,
-                            TimeUnit.SECONDS);
-                    landingSpeedDataExecutor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator("speed"), 4, 4,
-                            TimeUnit.SECONDS);
+                            4, 4, TimeUnit.SECONDS);
+                    landingSpeedDataExecutor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator("speed"),
+                            4, 4, TimeUnit.SECONDS);
                 }
-
             }
         };
 
         channel.basicConsume(consumerQueueName, true, consumer);
+    }
+
+    public static void checkFlightModeAndProcess(String message, MockSensorData mockSensorData) {
+
+        if (message.contains("shutdownMode")) {
+            System.out.println("Connection closed");
+            System.exit(0);
+        } else if (message.contains("landingMode") && !mockSensorData.isLandingMode) {
+            System.out.println("-------------------- Landing mode activated --------------------");
+            mockSensorData.isLandingMode = true;
+            mockSensorData.changeTypes = new String[] { "decreased" };
+            mockSensorData.sensorDataList.clear();
+            mockSensorData.sensorDataList.add("landingMode acknowledged");
+        }
     }
 }
 
