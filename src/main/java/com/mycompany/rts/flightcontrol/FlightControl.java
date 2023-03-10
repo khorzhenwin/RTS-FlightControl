@@ -50,11 +50,17 @@ public class FlightControl {
                 String routingKey = envelope.getRoutingKey();
                 String message = new String(body, "UTF-8");
                 try {
+                    flightControlProcessor.startTime = System.currentTimeMillis();
+
                     if (routingKey.equals("sensor.data")) {
                         processAndSendToActuator(flightControlProcessor, channel, message);
                     } else if (routingKey.equals("actuator.data")) {
                         processAndSendToSensor(flightControlProcessor, channel, message);
                     }
+
+                    flightControlProcessor.endTime = System.currentTimeMillis();
+                    flightControlProcessor.addDuration(flightControlProcessor.getTimeDifference());
+                    flightControlProcessor.cycles++;
 
                     if (flightControlProcessor.hasLanded) {
                         Thread shutdownSensor = new Thread(
@@ -70,11 +76,13 @@ public class FlightControl {
                         channel.close();
                         connection.close();
                         if (!shutdownSensor.isAlive() && !shutdownActuator.isAlive()) {
+                            flightControlProcessor.printDurationMetrics("FCS Processing Time");
                             System.exit(0);
                         }
                     }
                 } catch (Exception e) {
                 }
+
             }
         };
 
@@ -124,6 +132,7 @@ public class FlightControl {
             channel.basicPublish(EXCHANGE_NAME, SENSOR_PUBLISHER_ROUTING_KEY, null,
                     "shutdown speed generator".getBytes("UTF-8"));
             flightControlProcessor.hasSentShutDownSpeedMessage = true;
+            System.out.println("Shut down speed generator");
         }
         System.out.println("Received actuator data: " + message);
         flightControlProcessor.withActuatorData(message);
@@ -141,7 +150,7 @@ public class FlightControl {
     }
 }
 
-class FlightControlProcessor implements FlightMode {
+class FlightControlProcessor extends TestHelper implements FlightMode {
     public volatile boolean isLandingMode = false;
     public volatile boolean hasLanded = false;
     public volatile boolean hasSentLandingGearDeploymentMessage = false;

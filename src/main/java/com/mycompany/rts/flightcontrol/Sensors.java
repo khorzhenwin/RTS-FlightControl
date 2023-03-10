@@ -74,7 +74,7 @@ public class Sensors {
 
     public static void checkFlightModeAndProcess(String message, MockSensorData mockSensorData) {
         if (message.contains("sensor new reading")) {
-            mockSensorData.totalConsumed += 1;
+            mockSensorData.totalConsumed++;
             if (mockSensorData.startTime != 0) {
                 mockSensorData.endTime = System.currentTimeMillis();
                 mockSensorData.addDuration(mockSensorData.getTimeDifference());
@@ -82,7 +82,7 @@ public class Sensors {
             }
         } else if (message.contains("shutdownMode")) {
             System.out.println("Connection closed");
-            mockSensorData.printDurationMetrics();
+            mockSensorData.printDurationMetrics("Feedback Loop Life Cycle");
             mockSensorData.printThroughputMetrics();
             System.exit(0);
         } else if (message.contains("landingMode") && !mockSensorData.isLandingMode) {
@@ -180,13 +180,13 @@ class MockSensorData extends TestHelper {
         public void run() {
             try {
                 System.out.println("Publishing " + sensorDataList.size() + " sensor data");
-                cycles += 1;
+                cycles++;
                 endTime = 0;
                 startTime = System.currentTimeMillis();
                 for (int i = 0; i < sensorDataList.size(); i++) {
                     publish(sensorDataList.get(i));
                     if (!sensorDataList.get(i).contains("sensor new reading")) {
-                        totalPublished += 1;
+                        totalPublished++;
                     }
                 }
                 sensorDataList.clear();
