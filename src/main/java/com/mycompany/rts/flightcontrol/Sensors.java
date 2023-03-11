@@ -55,7 +55,7 @@ public class Sensors {
                     byte[] body) throws IOException {
                 String message = new String(body, "UTF-8");
                 System.out.println("########### Received - " + message);
-                checkFlightModeAndProcess(message, mockSensorData);
+                checkFlightModeAndProcess(message, mockSensorData, mockDataGeneratorExecutor);
 
                 if (message.contains("shutdown speed generator")) {
                     landingSpeedDataExecutor.shutdownNow();
@@ -72,8 +72,9 @@ public class Sensors {
         channel.basicConsume(consumerQueueName, true, consumer);
     }
 
-    public static void checkFlightModeAndProcess(String message, MockSensorData mockSensorData) {
-        if (message.contains("sensor new reading")) {
+    public static void checkFlightModeAndProcess(String message, MockSensorData mockSensorData,
+            ScheduledExecutorService mockDataGeneratorExecutor) {
+        if (message.contains("sensor new reading") && !mockDataGeneratorExecutor.isShutdown()) {
             mockSensorData.totalConsumed++;
             if (mockSensorData.startTime != 0) {
                 mockSensorData.endTime = System.currentTimeMillis();
