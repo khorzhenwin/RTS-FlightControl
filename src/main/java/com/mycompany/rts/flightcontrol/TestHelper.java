@@ -1,6 +1,13 @@
 package com.mycompany.rts.flightcontrol;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
+
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartUtils;
+import org.jfree.chart.JFreeChart;
+import org.jfree.data.category.DefaultCategoryDataset;
 
 public class TestHelper {
     public volatile ArrayList<String> durationList = new ArrayList<String>();
@@ -55,6 +62,25 @@ public class TestHelper {
         System.out.println("Total Published: " + totalPublished + " messages");
         System.out.println("==================================");
         System.out.println();
+    }
+
+    public void printLineChart() {
+        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+        for (int i = 0; i < durationList.size(); i++) {
+            dataset.addValue(Double.parseDouble(durationList.get(i)), "Duration", String.valueOf(i));
+        }
+
+        JFreeChart lineChart = ChartFactory.createLineChart(
+                "Duration Metrics", // Chart Title
+                "Iteration", // X-Axis Label
+                "Duration (ms)", // Y-Axis Label
+                dataset);
+
+        // print chart to jpeg
+        try {
+            ChartUtils.saveChartAsJPEG(new File("LineChart.jpeg"), lineChart, 500, 300);
+        } catch (IOException e) {
+        }
     }
 
 }
