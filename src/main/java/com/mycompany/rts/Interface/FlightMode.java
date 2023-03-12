@@ -1,4 +1,4 @@
-package com.mycompany.rts.flightcontrol;
+package com.mycompany.rts.Interface;
 
 public interface FlightMode {
     String getActuatorCommand(String message);

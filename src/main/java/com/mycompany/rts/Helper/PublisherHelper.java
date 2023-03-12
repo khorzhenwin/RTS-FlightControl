@@ -1,4 +1,4 @@
-package com.mycompany.rts.flightcontrol;
+package com.mycompany.rts.Helper;
 
 import java.io.IOException;
 import java.util.concurrent.TimeoutException;
@@ -35,43 +35,5 @@ public class PublisherHelper {
     public void publish(String msg) throws IOException, TimeoutException {
         channel.basicPublish(publisherExchange, publisherKey, false, null, msg.getBytes());
         System.out.println("Command Sent - " + msg);
-    }
-}
-
-class LandingSignalPublisher extends PublisherHelper implements Runnable {
-    String x;
-
-    public LandingSignalPublisher(String publisherExchange, String publisherKey,
-            String exchangeType, String x) {
-        super(publisherExchange, publisherKey, exchangeType);
-        this.x = x;
-    }
-
-    @Override
-    public void run() {
-        try {
-            publish("landingMode initiated for " + x);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-}
-
-class ShutdownSignalPublisher extends PublisherHelper implements Runnable {
-    String x;
-
-    public ShutdownSignalPublisher(String publisherExchange, String publisherKey,
-            String exchangeType, String x) {
-        super(publisherExchange, publisherKey, exchangeType);
-        this.x = x;
-    }
-
-    @Override
-    public void run() {
-        try {
-            publish("shutdownMode initiated for " + x);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
     }
 }
