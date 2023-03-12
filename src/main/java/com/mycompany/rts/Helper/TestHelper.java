@@ -64,21 +64,21 @@ public class TestHelper {
         System.out.println();
     }
 
-    public void printLineChart() {
+    public void printLineChart(String fileName, String chartTitle) {
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
         for (int i = 0; i < durationList.size(); i++) {
             dataset.addValue(Double.parseDouble(durationList.get(i)), "Duration", String.valueOf(i));
         }
 
         JFreeChart lineChart = ChartFactory.createLineChart(
-                "Duration Metrics", // Chart Title
+                "Duration Metrics For " + chartTitle, // Chart Title
                 "Iteration", // X-Axis Label
                 "Duration (ms)", // Y-Axis Label
                 dataset);
 
         // print chart to jpeg
         try {
-            ChartUtils.saveChartAsJPEG(new File("LineChart.jpeg"), lineChart, 500, 300);
+            ChartUtils.saveChartAsJPEG(new File(fileName + ".jpeg"), lineChart, 500, 300);
         } catch (IOException e) {
         }
     }

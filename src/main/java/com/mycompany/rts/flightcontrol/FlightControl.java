@@ -80,6 +80,7 @@ public class FlightControl {
                         connection.close();
                         if (!shutdownSensor.isAlive() && !shutdownActuator.isAlive()) {
                             flightControlProcessor.printDurationMetrics("FCS Processing Time");
+                            flightControlProcessor.printLineChart("FCSProcessor", "Feedback Loop Life Cycle");
                             System.exit(0);
                         }
                     }

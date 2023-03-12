@@ -84,7 +84,7 @@ public class Sensors {
             System.out.println("Connection closed");
             mockSensorData.printDurationMetrics("Feedback Loop Life Cycle");
             mockSensorData.printThroughputMetrics();
-            mockSensorData.printLineChart();
+            mockSensorData.printLineChart("feedbackLoop", "Feedback Loop Life Cycle");
             System.exit(0);
         } else if (message.contains("landingMode") && !mockSensorData.isLandingMode) {
             System.out.println("-------------------- Landing mode activated --------------------");
