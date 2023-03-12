@@ -83,10 +83,10 @@ public class Sensors {
             }
         } else if (message.contains("shutdownMode")) {
             System.out.println("Connection closed");
+            mockSensorData.printLineChart("feedbackLoop", "Feedback Loop Life Cycle");
             mockSensorData.printDurationMetrics("Feedback Loop Life Cycle", true);
             mockSensorData.printDurationMetrics("Feedback Loop Life Cycle", false);
             mockSensorData.printThroughputMetrics();
-            mockSensorData.printLineChart("feedbackLoop", "Feedback Loop Life Cycle");
             System.exit(0);
         } else if (message.contains("landingMode") && !mockSensorData.isLandingMode) {
             System.out.println("-------------------- Landing mode activated --------------------");
