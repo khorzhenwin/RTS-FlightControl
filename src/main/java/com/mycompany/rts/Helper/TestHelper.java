@@ -25,10 +25,16 @@ public class TestHelper {
         durationList.add(duration);
     }
 
-    public void printDurationMetrics(String metricType) {
+    public void printDurationMetrics(String metricType, boolean includeFirstIteration) {
         double totalDuration = 0;
         double maxDuration = 0;
         double minDuration = 100000;
+        String includeOrExclude = includeFirstIteration ? "INCLUDING" : "EXCLUDING";
+
+        if (!includeFirstIteration) {
+            durationList.remove(0);
+            cycles--;
+        }
         double totalSignals = durationList.size();
 
         for (String duration : durationList) {
@@ -41,16 +47,18 @@ public class TestHelper {
             }
             totalDuration += durationParsed;
         }
+
         System.out.println();
         System.out.println("==================================");
         System.out.println("Duration Metrics For " + metricType);
         System.out.println("==================================");
+        System.out.println("-----" + includeOrExclude + " 1ST ITERATION-----");
+        System.out.println("Count of Durations Collected: " + totalSignals);
         System.out.println("Total Duration: " + totalDuration + " ms - over " + cycles + " iterations");
         System.out.println("Max Duration: " + maxDuration + " ms");
         System.out.println("Min Duration: " + minDuration + " ms");
         System.out.println("Avg Duration: " + totalDuration / totalSignals + " ms");
         System.out.println("==================================");
-        System.out.println();
     }
 
     public void printThroughputMetrics() {
@@ -61,7 +69,6 @@ public class TestHelper {
         System.out.println("Total Consumed: " + totalConsumed + " messages");
         System.out.println("Total Published: " + totalPublished + " messages");
         System.out.println("==================================");
-        System.out.println();
     }
 
     public void printLineChart(String fileName, String chartTitle) {

@@ -76,13 +76,15 @@ public class Sensors {
         if (message.contains("sensor new reading")) {
             mockSensorData.totalConsumed++;
             if (mockSensorData.startTime != 0) {
+                mockSensorData.cycles++;
                 mockSensorData.endTime = System.currentTimeMillis();
                 mockSensorData.addDuration(mockSensorData.getTimeDifference());
                 mockSensorData.startTime = 0;
             }
         } else if (message.contains("shutdownMode")) {
             System.out.println("Connection closed");
-            mockSensorData.printDurationMetrics("Feedback Loop Life Cycle");
+            mockSensorData.printDurationMetrics("Feedback Loop Life Cycle", true);
+            mockSensorData.printDurationMetrics("Feedback Loop Life Cycle", false);
             mockSensorData.printThroughputMetrics();
             mockSensorData.printLineChart("feedbackLoop", "Feedback Loop Life Cycle");
             System.exit(0);

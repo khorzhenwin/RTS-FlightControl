@@ -90,7 +90,6 @@ public class MockSensorData extends TestHelper {
         public void run() {
             try {
                 System.out.println("Publishing " + sensorDataList.size() + " sensor data");
-                cycles++;
                 endTime = 0;
                 startTime = System.currentTimeMillis();
                 for (int i = 0; i < sensorDataList.size(); i++) {
