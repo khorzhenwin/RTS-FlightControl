@@ -13,19 +13,22 @@ import com.rabbitmq.client.DefaultConsumer;
 import com.rabbitmq.client.Envelope;
 
 public class Actuators {
-    private static final String EXCHANGE_NAME = "flight_control";
-    private static final String EXCHANGE_TYPE = "topic";
-    private static final String CONSUMER_ROUTING_KEY = "actuator.update";
-    private static final String PUBLISHER_ROUTING_KEY = "actuator.data";
+    private static final String EXCHANGE_NAME = "flight_control_direct";
+    private static final String EXCHANGE_TYPE = "direct";
+    private static final String CONSUMER_ROUTING_KEY = "actuator_update";
+    private static final String PUBLISHER_ROUTING_KEY = "actuator_data";
+    private static final String ACTUATOR_CONSUMER_QUEUE_NAME = "fcs-to-actuator";
+    private static final String ACTUATOR_PUBLISHER_QUEUE_NAME = "actuator-to-fcs";
 
     public static void main(String[] args) throws IOException, TimeoutException {
         ConnectionFactory factory = new ConnectionFactory();
         Connection connection = factory.newConnection();
         Channel channel = connection.createChannel();
         channel.exchangeDeclare(EXCHANGE_NAME, EXCHANGE_TYPE);
-
-        String consumerQueueName = channel.queueDeclare().getQueue();
-        channel.queueBind(consumerQueueName, EXCHANGE_NAME, CONSUMER_ROUTING_KEY);
+        channel.queueDeclare(ACTUATOR_CONSUMER_QUEUE_NAME, false, false, false, null);
+        channel.queueDeclare(ACTUATOR_PUBLISHER_QUEUE_NAME, false, false, false, null);
+        channel.queueBind(ACTUATOR_CONSUMER_QUEUE_NAME, EXCHANGE_NAME, CONSUMER_ROUTING_KEY);
+        channel.queueBind(ACTUATOR_PUBLISHER_QUEUE_NAME, EXCHANGE_NAME, PUBLISHER_ROUTING_KEY);
 
         Consumer consumer = new DefaultConsumer(channel) {
             @Override
@@ -54,7 +57,7 @@ public class Actuators {
             }
         };
 
-        channel.basicConsume(consumerQueueName, true, consumer);
+        channel.basicConsume(ACTUATOR_CONSUMER_QUEUE_NAME, true, consumer);
     }
 
     public static ArrayList<String> getAcknowledgementMessage(String message) {
@@ -63,6 +66,7 @@ public class Actuators {
         String[] tokens = message.split(" ");
         String[] sensors = tokens[1].trim().replaceAll("[\\[\\]]", "").split(",");
         for (String sensor : sensors) {
+            sensor = sensor.trim();
             if (sensor.equals("vents")) {
                 acknowledgementMessages.add(sensor + " " + tokens[0] + " for 10 seconds");
                 continue;

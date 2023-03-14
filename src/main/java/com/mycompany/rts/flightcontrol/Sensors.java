@@ -17,10 +17,12 @@ import com.rabbitmq.client.Envelope;
 
 public class Sensors {
 
-    protected static final String EXCHANGE_NAME = "flight_control";
-    protected static final String EXCHANGE_TYPE = "topic";
-    protected static final String PUBLISHER_ROUTING_KEY = "sensor.data";
-    protected static final String CONSUMER_ROUTING_KEY = "sensor.update";
+    protected static final String EXCHANGE_NAME = "flight_control_direct";
+    protected static final String EXCHANGE_TYPE = "direct";
+    protected static final String PUBLISHER_ROUTING_KEY = "sensor_data";
+    protected static final String CONSUMER_ROUTING_KEY = "sensor_update";
+    protected static final String SENSOR_CONSUMER_QUEUE_NAME = "fcs-to-sensor";
+    protected static final String SENSOR_PUBLISHER_QUEUE_NAME = "sensor-to-fcs";
 
     public static void main(String[] args) throws IOException, TimeoutException {
         // ------------------------------- PRODUCERS -------------------------------
@@ -32,22 +34,15 @@ public class Sensors {
         ScheduledExecutorService landingAltitudeDataExecutor = Executors.newScheduledThreadPool(1);
         ScheduledExecutorService landingSpeedDataExecutor = Executors.newScheduledThreadPool(1);
 
-        for (String sensorType : sensorTypes) {
-            mockDataGeneratorExecutor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator(sensorType),
-                    4, 4, TimeUnit.SECONDS);
-        }
-        publisherExecutor.scheduleAtFixedRate(
-                mockSensorData.new SensorDataPublisher(EXCHANGE_NAME, PUBLISHER_ROUTING_KEY, EXCHANGE_TYPE),
-                5, 5, TimeUnit.SECONDS);
-
         // ------------------------------- CONSUMERS -------------------------------
         ConnectionFactory factory = new ConnectionFactory();
         Connection connection = factory.newConnection();
         Channel channel = connection.createChannel();
         channel.exchangeDeclare(EXCHANGE_NAME, EXCHANGE_TYPE);
-
-        String consumerQueueName = channel.queueDeclare().getQueue();
-        channel.queueBind(consumerQueueName, EXCHANGE_NAME, CONSUMER_ROUTING_KEY);
+        channel.queueDeclare(SENSOR_CONSUMER_QUEUE_NAME, false, false, false, null);
+        channel.queueDeclare(SENSOR_PUBLISHER_QUEUE_NAME, false, false, false, null);
+        channel.queueBind(SENSOR_CONSUMER_QUEUE_NAME, EXCHANGE_NAME, CONSUMER_ROUTING_KEY);
+        channel.queueBind(SENSOR_PUBLISHER_QUEUE_NAME, EXCHANGE_NAME, PUBLISHER_ROUTING_KEY);
 
         Consumer consumer = new DefaultConsumer(channel) {
             @Override
@@ -69,7 +64,15 @@ public class Sensors {
             }
         };
 
-        channel.basicConsume(consumerQueueName, true, consumer);
+        channel.basicConsume(SENSOR_CONSUMER_QUEUE_NAME, true, consumer);
+
+        for (String sensorType : sensorTypes) {
+            mockDataGeneratorExecutor.scheduleAtFixedRate(mockSensorData.new SensorDataGenerator(sensorType),
+                    4, 4, TimeUnit.SECONDS);
+        }
+        publisherExecutor.scheduleAtFixedRate(
+                mockSensorData.new SensorDataPublisher(EXCHANGE_NAME, PUBLISHER_ROUTING_KEY, EXCHANGE_TYPE),
+                5, 5, TimeUnit.SECONDS);
     }
 
     public static void checkFlightModeAndProcess(String message, MockSensorData mockSensorData) {

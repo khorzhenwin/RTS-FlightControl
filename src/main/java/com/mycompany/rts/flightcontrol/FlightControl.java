@@ -18,11 +18,18 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class FlightControl {
-    private static final String EXCHANGE_NAME = "flight_control";
-    private static final String EXCHANGE_TYPE = "topic";
-    private static final String CONSUMER_ROUTING_KEY = "*.data";
-    private static final String ACTUATOR_PUBLISHER_ROUTING_KEY = "actuator.update";
-    private static final String SENSOR_PUBLISHER_ROUTING_KEY = "sensor.update";
+    private static final String EXCHANGE_NAME = "flight_control_direct";
+    private static final String EXCHANGE_TYPE = "direct";
+
+    private static final String SENSOR_CONSUMER_QUEUE_NAME = "sensor-to-fcs";
+    private static final String SENSOR_PUBLISHER_QUEUE_NAME = "fcs-to-sensor";
+    private static final String SENSOR_CONSUMER_ROUTING_KEY = "sensor_data";
+    private static final String SENSOR_PUBLISHER_ROUTING_KEY = "sensor_update";
+
+    private static final String ACTUATOR_CONSUMER_QUEUE_NAME = "actuator-to-fcs";
+    private static final String ACTUATOR_PUBLISHER_QUEUE_NAME = "fcs-to-actuator";
+    private static final String ACTUATOR_CONSUMER_ROUTING_KEY = "actuator_data";
+    private static final String ACTUATOR_PUBLISHER_ROUTING_KEY = "actuator_update";
 
     public static void main(String[] args) throws IOException, TimeoutException {
         ScheduledExecutorService executor = Executors.newScheduledThreadPool(1);
@@ -31,36 +38,23 @@ public class FlightControl {
         Connection connection = factory.newConnection();
         Channel channel = connection.createChannel();
         channel.exchangeDeclare(EXCHANGE_NAME, EXCHANGE_TYPE);
+        channel.queueDeclare(SENSOR_CONSUMER_QUEUE_NAME, false, false, false, null);
+        channel.queueDeclare(SENSOR_PUBLISHER_QUEUE_NAME, false, false, false, null);
+        channel.queueDeclare(ACTUATOR_CONSUMER_QUEUE_NAME, false, false, false, null);
+        channel.queueDeclare(ACTUATOR_PUBLISHER_QUEUE_NAME, false, false, false, null);
+        channel.queueBind(SENSOR_CONSUMER_QUEUE_NAME, EXCHANGE_NAME, SENSOR_CONSUMER_ROUTING_KEY);
+        channel.queueBind(SENSOR_PUBLISHER_QUEUE_NAME, EXCHANGE_NAME, SENSOR_PUBLISHER_QUEUE_NAME);
+        channel.queueBind(ACTUATOR_CONSUMER_QUEUE_NAME, EXCHANGE_NAME, ACTUATOR_CONSUMER_ROUTING_KEY);
+        channel.queueBind(ACTUATOR_PUBLISHER_QUEUE_NAME, EXCHANGE_NAME, ACTUATOR_PUBLISHER_ROUTING_KEY);
 
-        executor.scheduleAtFixedRate(flightControlProcessor.new FlightControlMonitor(), 0, 5, TimeUnit.SECONDS);
-        // publish landing signal after 30 seconds only one time
-        executor.schedule(
-                new LandingSignalPublisher(EXCHANGE_NAME, SENSOR_PUBLISHER_ROUTING_KEY, EXCHANGE_TYPE, "sensor"),
-                30, TimeUnit.SECONDS);
-        executor.schedule(
-                new LandingSignalPublisher(EXCHANGE_NAME, ACTUATOR_PUBLISHER_ROUTING_KEY, EXCHANGE_TYPE, "actuator"),
-                30, TimeUnit.SECONDS);
-
-        // publish on a *.update queue
-        // subscribe on a *.data queue
-        String consumerQueueName = channel.queueDeclare().getQueue();
-        channel.queueBind(consumerQueueName, EXCHANGE_NAME, CONSUMER_ROUTING_KEY);
-
-        Consumer consumer = new DefaultConsumer(channel) {
+        Consumer sensorConsumer = new DefaultConsumer(channel) {
             @Override
             public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties,
                     byte[] body) throws IOException {
-                String routingKey = envelope.getRoutingKey();
                 String message = new String(body, "UTF-8");
                 try {
                     flightControlProcessor.startTime = System.currentTimeMillis();
-
-                    if (routingKey.equals("sensor.data")) {
-                        processAndSendToActuator(flightControlProcessor, channel, message);
-                    } else if (routingKey.equals("actuator.data")) {
-                        processAndSendToSensor(flightControlProcessor, channel, message);
-                    }
-
+                    processAndSendToActuator(flightControlProcessor, channel, message);
                     flightControlProcessor.endTime = System.currentTimeMillis();
                     flightControlProcessor.addDuration(flightControlProcessor.getTimeDifference());
                     flightControlProcessor.cycles++;
@@ -92,7 +86,34 @@ public class FlightControl {
             }
         };
 
-        channel.basicConsume(consumerQueueName, true, consumer);
+        Consumer actuatorConsumer = new DefaultConsumer(channel) {
+            @Override
+            public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties,
+                    byte[] body) throws IOException {
+                String message = new String(body, "UTF-8");
+                try {
+                    double s = System.currentTimeMillis();
+                    processAndSendToSensor(flightControlProcessor, channel, message);
+                    double e = System.currentTimeMillis();
+                    flightControlProcessor.addDuration(String.valueOf(e - s));
+                    flightControlProcessor.cycles++;
+                } catch (Exception e) {
+                }
+
+            }
+        };
+
+        channel.basicConsume(SENSOR_CONSUMER_QUEUE_NAME, true, sensorConsumer);
+        channel.basicConsume(ACTUATOR_CONSUMER_QUEUE_NAME, true, actuatorConsumer);
+
+        executor.scheduleAtFixedRate(flightControlProcessor.new FlightControlMonitor(), 0, 5, TimeUnit.SECONDS);
+        // publish landing signal after 30 seconds only one time
+        executor.schedule(
+                new LandingSignalPublisher(EXCHANGE_NAME, SENSOR_PUBLISHER_ROUTING_KEY, EXCHANGE_TYPE, "sensor"),
+                30, TimeUnit.SECONDS);
+        executor.schedule(
+                new LandingSignalPublisher(EXCHANGE_NAME, ACTUATOR_PUBLISHER_ROUTING_KEY, EXCHANGE_TYPE, "actuator"),
+                30, TimeUnit.SECONDS);
     }
 
     public static void processAndSendToActuator(FlightControlProcessor flightControlProcessor, Channel channel,
