@@ -87,8 +87,12 @@ public class FlightControlProcessor extends TestHelper implements FlightMode {
         String[] messageParts = message.split(" ");
         String actuatorType = messageParts[0].trim();
         String changeType = messageParts[1].trim();
-        int changeValue = (changeType.equals("increase")) ? Integer.parseInt(messageParts[3])
-                : -Integer.parseInt(messageParts[3]);
+        int changeValue = 0;
+        if (changeType.equals("increase")) {
+            changeValue = Integer.parseInt(messageParts[3]);
+        } else if (changeType.equals("decrease")) {
+            changeValue = -Integer.parseInt(messageParts[3]);
+        }
         if (actuatorType.equals("vents")) {
             changeValue = (changeType.equals("open")) ? -10 : 10; // vents open = cabinPressure decrease
         }
