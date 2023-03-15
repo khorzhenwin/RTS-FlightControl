@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class FlightControl {
+
     private static final String EXCHANGE_NAME = "flight_control";
     private static final String EXCHANGE_TYPE = "topic";
     private static final String CONSUMER_ROUTING_KEY = "*.data";
@@ -46,6 +47,13 @@ public class FlightControl {
         String consumerQueueName = channel.queueDeclare().getQueue();
         channel.queueBind(consumerQueueName, EXCHANGE_NAME, CONSUMER_ROUTING_KEY);
 
+        WorkerClass worker = new WorkerClass(
+                flightControlProcessor,
+                channel,
+                EXCHANGE_NAME,
+                SENSOR_PUBLISHER_ROUTING_KEY,
+                ACTUATOR_PUBLISHER_ROUTING_KEY);
+
         Consumer consumer = new DefaultConsumer(channel) {
             @Override
             public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties,
@@ -53,17 +61,13 @@ public class FlightControl {
                 String routingKey = envelope.getRoutingKey();
                 String message = new String(body, "UTF-8");
                 try {
-                    flightControlProcessor.startTime = System.currentTimeMillis();
-
+                    Thread thread = new Thread();
                     if (routingKey.equals("sensor.data")) {
-                        processAndSendToActuator(flightControlProcessor, channel, message);
+                        thread = new Thread(worker.new WorkerThread(true, message));
                     } else if (routingKey.equals("actuator.data")) {
-                        processAndSendToSensor(flightControlProcessor, channel, message);
+                        thread = new Thread(worker.new WorkerThread(false, message));
                     }
-
-                    flightControlProcessor.endTime = System.currentTimeMillis();
-                    flightControlProcessor.addDuration(flightControlProcessor.getTimeDifference());
-                    flightControlProcessor.cycles++;
+                    thread.start();
 
                     if (flightControlProcessor.hasLanded) {
                         Thread shutdownSensor = new Thread(
@@ -74,7 +78,6 @@ public class FlightControl {
                                         EXCHANGE_TYPE, "actuators"));
                         shutdownSensor.start();
                         shutdownActuator.start();
-
                         executor.shutdown();
                         channel.close();
                         connection.close();
@@ -95,8 +98,29 @@ public class FlightControl {
         channel.basicConsume(consumerQueueName, true, consumer);
     }
 
-    public static void processAndSendToActuator(FlightControlProcessor flightControlProcessor, Channel channel,
-            String message)
+}
+
+class WorkerClass {
+
+    public FlightControlProcessor flightControlProcessor;
+    public Channel channel;
+    public String exchangeName;
+    public String sensorKey;
+    public String actuatorKey;
+
+    public WorkerClass(FlightControlProcessor flightControlProcessor,
+            Channel channel,
+            String exchangeName,
+            String sensorKey,
+            String actuatorKey) {
+        this.flightControlProcessor = flightControlProcessor;
+        this.channel = channel;
+        this.exchangeName = exchangeName;
+        this.sensorKey = sensorKey;
+        this.actuatorKey = actuatorKey;
+    }
+
+    public void processAndSendToActuator(String message)
             throws IOException, TimeoutException {
         System.out.println("Received sensor data: " + message);
         if (message.contains("landingMode")) {
@@ -106,7 +130,8 @@ public class FlightControl {
             flightControlProcessor.withSensorData(message);
             String command = flightControlProcessor.getActuatorCommand(message);
             if (!command.equals("")) {
-                channel.basicPublish(EXCHANGE_NAME, ACTUATOR_PUBLISHER_ROUTING_KEY, null,
+                channel.basicPublish(exchangeName,
+                        actuatorKey, null,
                         command.getBytes("UTF-8"));
             }
             // signal actuators to deploy landing gear if altitude is less than 10000 feet
@@ -116,8 +141,10 @@ public class FlightControl {
                     && !flightControlProcessor.hasSentLandingGearDeploymentMessage) {
                 flightControlProcessor.hasSentLandingGearDeploymentMessage = true;
                 System.out.println("Altitude is less than 2000 feet. Sending signal to deploy landing gear");
-                channel.basicPublish(EXCHANGE_NAME, ACTUATOR_PUBLISHER_ROUTING_KEY, null,
-                        "deploy [landingGear] to 1".getBytes("UTF-8"));
+                String x = "deploy [landingGear] to 1";
+                channel.basicPublish(exchangeName,
+                        actuatorKey, null,
+                        x.getBytes("UTF-8"));
             } else if (flightControlProcessor.altitude < 1000 && flightControlProcessor.isLandingGearDeployed) {
                 System.out.println("Reached optimum altitude to land");
                 System.out.println("Landing ....");
@@ -131,12 +158,13 @@ public class FlightControl {
         System.out.println();
     }
 
-    public static void processAndSendToSensor(FlightControlProcessor flightControlProcessor, Channel channel,
-            String message)
+    public void processAndSendToSensor(String message)
             throws IOException, TimeoutException {
         if (flightControlProcessor.speed <= 10 && !flightControlProcessor.hasSentShutDownSpeedMessage) {
-            channel.basicPublish(EXCHANGE_NAME, SENSOR_PUBLISHER_ROUTING_KEY, null,
-                    "shutdown speed generator".getBytes("UTF-8"));
+            String x = "shutdown speed generator";
+            channel.basicPublish(exchangeName,
+                    sensorKey, null,
+                    x.getBytes("UTF-8"));
             flightControlProcessor.hasSentShutDownSpeedMessage = true;
             System.out.println("Shut down speed generator");
         }
@@ -149,9 +177,37 @@ public class FlightControl {
         if (!actuator.equals("")) {
             String newSensorValue = flightControlProcessor.getSensorValue(correspondingSensor);
             String sensorNewValueFeedback = correspondingSensor + " sensor new reading : " + newSensorValue;
-            channel.basicPublish(EXCHANGE_NAME,
-                    SENSOR_PUBLISHER_ROUTING_KEY, null,
+            channel.basicPublish(exchangeName,
+                    sensorKey, null,
                     sensorNewValueFeedback.getBytes("UTF-8"));
+        }
+    }
+
+    class WorkerThread implements Runnable {
+        boolean isSensor;
+        String message;
+
+        public WorkerThread(boolean isSensor, String message) {
+            this.isSensor = isSensor;
+            this.message = message;
+        }
+
+        @Override
+        public void run() {
+            try {
+                double start = System.currentTimeMillis();
+                if (isSensor) {
+                    processAndSendToActuator(message);
+                } else {
+                    processAndSendToSensor(message);
+                }
+                double end = System.currentTimeMillis();
+                flightControlProcessor.addDuration(String.valueOf(end - start));
+                flightControlProcessor.cycles++;
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 }
